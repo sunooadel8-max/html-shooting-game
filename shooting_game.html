@@ -1,0 +1,393 @@
+!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Target Shooter - Updated</title>
+    <!-- Using custom CSS for a cool, dark arcade theme -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
+        
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #1a1a2e; /* Dark background */
+            color: #e94560; /* Accent color for text */
+            font-family: 'Orbitron', sans-serif;
+            padding: 20px;
+        }
+
+        .game-container {
+            width: 95%;
+            max-width: 800px;
+            background: #272c44;
+            border-radius: 20px;
+            box-shadow: 0 0 40px rgba(233, 69, 96, 0.4);
+            padding: 20px;
+            text-align: center;
+        }
+
+        h1 {
+            color: #0ff; /* Neon blue title */
+            text-shadow: 0 0 10px #0ff, 0 0 20px #0ff;
+            margin-bottom: 20px;
+        }
+
+        #scoreboard {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+            font-weight: 700;
+            padding: 10px;
+            background: #1a1a2e;
+            border-radius: 10px;
+            border: 2px solid #e94560;
+        }
+
+        #timer-display span { color: #0ff; }
+        #score-display span { color: #e94560; }
+
+        canvas {
+            background-color: #3b3f5c; /* Canvas background */
+            border: 5px solid #0ff;
+            border-radius: 15px;
+            cursor: crosshair;
+            display: block;
+            touch-action: manipulation; /* Improves touch responsiveness */
+            width: 100%;
+            height: auto;
+        }
+
+        #start-button {
+            margin-top: 20px;
+            padding: 12px 25px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #1a1a2e;
+            background-color: #0ff;
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0, 255, 255, 0.5);
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
+        }
+
+        #start-button:hover {
+            background-color: #fff;
+            box-shadow: 0 5px 20px rgba(255, 255, 255, 0.7);
+            transform: translateY(-2px);
+        }
+
+        .feedback-message {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 15px 30px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            border-radius: 10px;
+            font-size: 2rem;
+            font-weight: 700;
+            opacity: 0;
+            transition: opacity 0.5s;
+            pointer-events: none;
+            z-index: 1000;
+            border: 3px solid #e94560;
+            text-shadow: 0 0 5px #e94560;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <h1>Arcade Target Shooter</h1>
+        <!-- Group Member Name Placeholder -->
+        <p style="font-size: 0.8rem; color: #5c638c;">
+            Group Members: [Please list group members here]
+        </p>
+        <!-- Scoreboard -->
+        <div id="scoreboard">
+            <div id="score-display">SCORE: <span id="score-value">0</span></div>
+            <div id="timer-display">TIME: <span id="timer-value">30</span>s</div>
+        </div>
+        
+        <!-- Game Canvas -->
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+
+        <!-- Start/Restart Button -->
+        <button id="start-button">START GAME (30s)</button>
+
+        <!-- Dynamic Feedback Message -->
+        <div id="feedback" class="feedback-message"></div>
+    </div>
+
+    <script type="module">
+        
+        // --- Group Member Information ---
+        /*
+            Group Members:
+            1. [Add Name 1 Here]
+            2. [Add Name 2 Here]
+            3. [Add Name 3 Here]
+        */
+        // --------------------------------
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreValueDisplay = document.getElementById('score-value');
+        const timerValueDisplay = document.getElementById('timer-value');
+        const startButton = document.getElementById('start-button');
+        const feedbackMessage = document.getElementById('feedback');
+        
+        // Game state variables
+        let score = 0;
+        let timeRemaining = 30;
+        let gameRunning = false;
+        let gameInterval = null;
+        let timerInterval = null;
+
+        // Target properties
+        let target = {
+            x: 0,
+            y: 0,
+            radius: 30,
+            color: '#e94560',
+            speedX: 2,
+            speedY: 2,
+        };
+
+        const INITIAL_TIME = 30;
+
+        // --- Core Functions ---
+
+        // Function to update the canvas dimensions based on screen size
+        function resizeCanvas() {
+            // Maintain a 2:1 aspect ratio (W:H)
+            const containerWidth = canvas.parentElement.clientWidth;
+            canvas.width = containerWidth > 800 ? 800 : containerWidth;
+            canvas.height = canvas.width / 2;
+        }
+        
+        // Adjust canvas size on load and resize
+        window.addEventListener('load', resizeCanvas);
+        window.addEventListener('resize', resizeCanvas);
+
+        // Utility to display temporary feedback messages (e.g., Hit, Miss)
+        function showFeedback(message) {
+            feedbackMessage.textContent = message;
+            feedbackMessage.style.opacity = 1;
+            
+            // Set message style based on content
+            if (message.includes('HIT')) {
+                feedbackMessage.style.borderColor = '#0ff';
+                feedbackMessage.style.color = '#0ff';
+                feedbackMessage.style.textShadow = '0 0 5px #0ff';
+            } else if (message.includes('MISS')) {
+                feedbackMessage.style.borderColor = '#e94560';
+                feedbackMessage.style.color = '#e94560';
+                feedbackMessage.style.textShadow = '0 0 5px #e94560';
+            } else {
+                 feedbackMessage.style.borderColor = '#fff';
+                 feedbackMessage.style.color = '#fff';
+                 feedbackMessage.style.textShadow = '0 0 5px #fff';
+            }
+
+            // Hide the message after a short delay
+            setTimeout(() => {
+                feedbackMessage.style.opacity = 0;
+            }, 750);
+        }
+
+        // Function to update the score display
+        function updateScoreboard() {
+            scoreValueDisplay.textContent = score;
+            timerValueDisplay.textContent = timeRemaining;
+        }
+
+        // Function to draw the target
+        function drawTarget() {
+            ctx.beginPath();
+            ctx.arc(target.x, target.y, target.radius, 0, Math.PI * 2);
+            ctx.fillStyle = target.color;
+            ctx.shadowColor = target.color;
+            ctx.shadowBlur = 15;
+            ctx.fill();
+            ctx.closePath();
+
+            // Draw bullseye center
+            ctx.beginPath();
+            ctx.arc(target.x, target.y, target.radius / 3, 0, Math.PI * 2);
+            ctx.fillStyle = '#1a1a2e';
+            ctx.shadowBlur = 0;
+            ctx.fill();
+            ctx.closePath();
+        }
+
+        // Function to move the target
+        function moveTarget() {
+            target.x += target.speedX;
+            target.y += target.speedY;
+
+            // Bounce off walls (X-axis)
+            if (target.x + target.radius > canvas.width || target.x - target.radius < 0) {
+                target.speedX *= -1;
+            }
+
+            // Bounce off walls (Y-axis)
+            if (target.y + target.radius > canvas.height || target.y - target.radius < 0) {
+                target.speedY *= -1;
+            }
+        }
+
+        // Function to generate a new target position and speed
+        function generateNewTarget() {
+            const minSpeed = 2;
+            const maxSpeed = 4;
+            const randomSpeed = () => (Math.random() * (maxSpeed - minSpeed) + minSpeed) * (Math.random() < 0.5 ? 1 : -1);
+
+            target.x = Math.random() * (canvas.width - target.radius * 2) + target.radius;
+            target.y = Math.random() * (canvas.height - target.radius * 2) + target.radius;
+            target.speedX = randomSpeed();
+            target.speedY = randomSpeed();
+        }
+
+        // Function to check if the click hit the target
+        function checkHit(clickX, clickY) {
+            const distance = Math.sqrt(
+                (clickX - target.x) ** 2 + (clickY - target.y) ** 2
+            );
+            return distance < target.radius;
+        }
+
+        // Game loop
+        function drawGame() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Background grid pattern for arcade feel
+            ctx.fillStyle = '#3b3f5c';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw Target
+            drawTarget();
+            
+            // Move Target
+            moveTarget();
+
+            if (gameRunning) {
+                gameInterval = requestAnimationFrame(drawGame);
+            }
+        }
+
+        // Timer function
+        function startTimer() {
+            timerInterval = setInterval(() => {
+                timeRemaining--;
+                updateScoreboard();
+
+                if (timeRemaining <= 0) {
+                    endGame();
+                }
+            }, 1000);
+        }
+
+        // Start/Restart Game
+        function startGame() {
+            if (gameRunning) return;
+
+            score = 0;
+            timeRemaining = INITIAL_TIME;
+            gameRunning = true;
+            startButton.textContent = "GAME ACTIVE";
+            startButton.disabled = true;
+            
+            updateScoreboard();
+            generateNewTarget();
+            startTimer();
+            drawGame();
+        }
+
+        // End Game
+        function endGame() {
+            gameRunning = false;
+            cancelAnimationFrame(gameInterval);
+            clearInterval(timerInterval);
+
+            showFeedback(`GAME OVER! Final Score: ${score}`);
+            startButton.textContent = "RESTART GAME";
+            startButton.disabled = false;
+        }
+
+        // --- Mouse Event Handlers with New Logic ---
+
+        // Helper to get normalized click coordinates
+        function getClickCoords(e) {
+            const rect = canvas.getBoundingClientRect();
+            // Scale click position based on the canvas's current rendered size
+            const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
+            const clickY = (e.clientY - rect.top) * (canvas.height / rect.height);
+            return { clickX, clickY };
+        }
+
+        // Primary click handler (handles both left and right clicks)
+        canvas.addEventListener('mousedown', (e) => {
+            if (!gameRunning) return;
+            
+            const { clickX, clickY } = getClickCoords(e);
+            
+            // Left Click (event.button === 0)
+            if (e.button === 0) {
+                // Left-click (Standard Shot) Logic
+                if (checkHit(clickX, clickY)) {
+                    score += 1;
+                    showFeedback("HIT! (+1 Point)");
+                    generateNewTarget();
+                } else {
+                    // REQUIREMENT A: Lose 1 point if missed, but score cannot fall below 0.
+                    score = Math.max(0, score - 1);
+                    showFeedback("MISS! (-1 Point)");
+                }
+            } 
+            // Right Click (event.button === 2)
+            else if (e.button === 2) {
+                // REQUIREMENT B: Right-click (Special Shot) Logic
+                if (checkHit(clickX, clickY)) {
+                    // Successful Hit: +2 points AND -1 second penalty
+                    score += 2;
+                    timeRemaining = Math.max(0, timeRemaining - 1); // Lose 1s, clamped at 0
+                    showFeedback("CRITICAL HIT! (+2 Points, -1s)");
+                    generateNewTarget();
+                } else {
+                    // Missed Right-Click: No explicit penalty mentioned, so it's a neutral miss.
+                    showFeedback("MISS (Right-Click)!");
+                }
+            }
+
+            updateScoreboard();
+        });
+
+        // IMPORTANT: Prevent the browser's default context menu on right-click
+        canvas.addEventListener('contextmenu', (e) => {
+            if (gameRunning) {
+                // Only prevent context menu if the game is running to allow for right-click interaction
+                e.preventDefault(); 
+            }
+        });
+
+        // Initialize button listener
+        startButton.addEventListener('click', startGame);
+
+        // Initial setup
+        generateNewTarget();
+        updateScoreboard();
+        drawGame(); // Start the animation loop but keep gameRunning=false until start button is pressed.
+        
+    </script>
+</body>
+</html>
